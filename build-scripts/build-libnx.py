@@ -11,7 +11,7 @@ source=Path(__file__).resolve().parents[1]; dkp=Path(os.environ.get('DEVKITPRO',
 out.mkdir(parents=True)
 toolchain=out/'Switch.cmake'; toolchain.write_text('include("'+str(dkp/'cmake/Switch.cmake')+'")\nset(NX_ROOT "'+str(sdk)+'")\nlist(PREPEND CMAKE_FIND_ROOT_PATH "'+str(sdk)+'")\n')
 commands=[['cmake','-S',str(source),'-B',str(out),'-G','Ninja','-DCMAKE_TOOLCHAIN_FILE='+str(toolchain),'-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
-    '-DCMAKE_BUILD_TYPE=RelWithDebInfo','-DSDL_SHARED=OFF','-DSDL_STATIC=ON','-DSDL_TEST=OFF','-DSDL_TESTS=OFF','-DSDL_POWER=OFF','-DSDL_FILESYSTEM=OFF','-DSDL_PTHREADS=ON'],
+    '-DCMAKE_BUILD_TYPE=RelWithDebInfo','-DSDL_SHARED=OFF','-DSDL_STATIC=ON','-DSDL_TEST=OFF','-DSDL_TESTS=OFF','-DSDL_POWER=OFF','-DSDL_FILESYSTEM=OFF','-DSDL_CPUINFO=ON','-DSDL_PTHREADS=ON'],
     ['cmake','--build',str(out),'--parallel','8']]
 for command in commands: subprocess.run(command,check=True)
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
