@@ -195,7 +195,8 @@ SWITCH_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
 int
 SWITCH_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
 {
-    SDL_WindowData *data = (SDL_WindowData *) SDL_GetFocusWindow()->driverdata;
+    SDL_WindowData *data = switch_window
+        ? (SDL_WindowData *) switch_window->driverdata : NULL;
     SDL_GLContext ctx = SDL_GL_GetCurrentContext();
     NWindow *nWindow = nwindowGetDefault();
 
@@ -351,6 +352,16 @@ SWITCH_PumpEvents(_THIS)
         ev.type = SDL_QUIT;
         SDL_PushEvent(&ev);
         return;
+    }
+
+    /* Use the focus state delivered by libnx's existing applet message pump.
+       Applications which suspend on HOME should select the libnx
+       SuspendHomeSleepNotify policy to receive the transition before suspend. */
+    if (switch_window != NULL) {
+        SDL_Window *focus = appletGetFocusState() == AppletFocusState_InFocus
+            ? switch_window : NULL;
+        SDL_SetKeyboardFocus(focus);
+        SDL_SetMouseFocus(focus);
     }
 
     // we don't want other inputs overlapping with software keyboard
