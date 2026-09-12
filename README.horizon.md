@@ -30,3 +30,7 @@ Archive output: `libSDL2.a`.
 Use the paired [FNA](https://github.com/pixelomer/FNA) and
 [FNA3D](https://github.com/pixelomer/FNA3D) revisions selected by the application.
 These builds use SDL2/OpenGL and do not enable a Vulkan renderer.
+
+The source-build helpers' recursive source-fetch controls can be run with
+`python3 tests/horizon/test_sources.py`; these tests create only temporary,
+original Git fixtures and do not require a console or game files.
