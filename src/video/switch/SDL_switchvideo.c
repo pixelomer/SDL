@@ -40,6 +40,105 @@
 static SDL_Window *switch_window = NULL;
 static AppletOperationMode operationMode;
 
+/* The graphics thread can block in presentation while HOME is visible. Keep
+   collecting the actual Horizon transitions, then apply them on the SDL video
+   thread. Never touch SDL window/focus state from the notification thread. */
+typedef struct SWITCH_AppletNotification {
+    AppletHookType type;
+    int value;
+    struct SWITCH_AppletNotification *next;
+} SWITCH_AppletNotification;
+static SDL_mutex *applet_mutex;
+static SDL_Thread *applet_thread;
+static SDL_atomic_t applet_stop, applet_quit;
+static AppletHookCookie applet_cookie;
+static SWITCH_AppletNotification *applet_first, *applet_last;
+
+static void
+SWITCH_AppletHook(AppletHookType type, void *param)
+{
+    SWITCH_AppletNotification *event;
+    int value;
+    (void)param;
+    if (type == AppletHookType_OnFocusState) {
+        value = appletGetFocusState();
+    } else if (type == AppletHookType_OnOperationMode) {
+        value = appletGetOperationMode();
+    } else {
+        return;
+    }
+    event = SDL_malloc(sizeof(*event));
+    if (!event) {
+        SDL_AtomicSet(&applet_quit, -1);
+        SDL_AtomicSet(&applet_stop, 1);
+        return;
+    }
+    event->type = type;
+    event->value = value;
+    event->next = NULL;
+    SDL_LockMutex(applet_mutex);
+    if (applet_last) {
+        applet_last->next = event;
+    } else {
+        applet_first = event;
+    }
+    applet_last = event;
+    SDL_UnlockMutex(applet_mutex);
+}
+
+static int
+SWITCH_AppletThread(void *unused)
+{
+    (void)unused;
+    while (!SDL_AtomicGet(&applet_stop)) {
+        if (R_SUCCEEDED(eventWait(appletGetMessageEvent(), 100000000)) &&
+            !appletMainLoop()) {
+            SDL_AtomicSet(&applet_quit, 1);
+            break;
+        }
+    }
+    return 0;
+}
+
+static void
+SWITCH_StopAppletEvents(void)
+{
+    SWITCH_AppletNotification *event, *next;
+    if (applet_thread) {
+        SDL_AtomicSet(&applet_stop, 1);
+        SDL_WaitThread(applet_thread, NULL);
+        applet_thread = NULL;
+    }
+    if (applet_mutex) {
+        appletUnhook(&applet_cookie);
+        for (event = applet_first; event; event = next) {
+            next = event->next;
+            SDL_free(event);
+        }
+        applet_first = applet_last = NULL;
+        SDL_DestroyMutex(applet_mutex);
+        applet_mutex = NULL;
+    }
+}
+
+static int
+SWITCH_StartAppletEvents(void)
+{
+    applet_mutex = SDL_CreateMutex();
+    if (!applet_mutex) {
+        return -1;
+    }
+    SDL_AtomicSet(&applet_stop, 0);
+    SDL_AtomicSet(&applet_quit, 0);
+    appletHook(&applet_cookie, SWITCH_AppletHook, NULL);
+    applet_thread = SDL_CreateThread(SWITCH_AppletThread, "SDL applet events", NULL);
+    if (!applet_thread) {
+        SWITCH_StopAppletEvents();
+        return -1;
+    }
+    return 0;
+}
+
 static void
 SWITCH_Destroy(SDL_VideoDevice *device)
 {
@@ -150,12 +249,13 @@ SWITCH_VideoInit(_THIS)
     // init software keyboard
     SWITCH_InitSwkb();
 
-    return 0;
+    return SWITCH_StartAppletEvents();
 }
 
 void
 SWITCH_VideoQuit(_THIS)
 {
+    SWITCH_StopAppletEvents();
     // this should not be needed if user code is right (SDL_GL_LoadLibrary/SDL_GL_UnloadLibrary calls match)
     // this (user) error doesn't have the same effect on switch thought, as the driver needs to be unloaded (crash)
     if(_this->gl_config.driver_loaded > 0) {
@@ -250,7 +350,7 @@ SWITCH_CreateWindow(_THIS, SDL_Window *window)
     /* starting operation mode */
     operationMode = appletGetOperationMode();
 
-    /* One window, it always has focus */
+    /* Initial focus; the applet notification queue tracks later changes. */
     SDL_SetMouseFocus(window);
     SDL_SetKeyboardFocus(window);
 
@@ -345,23 +445,35 @@ SWITCH_SetWindowGrab(_THIS, SDL_Window *window, SDL_bool grabbed)
 void
 SWITCH_PumpEvents(_THIS)
 {
-    AppletOperationMode om;
-
-    if (!appletMainLoop()) {
+    AppletOperationMode om = operationMode;
+    SWITCH_AppletNotification *event, *next;
+    int quit = SDL_AtomicSet(&applet_quit, 0);
+    if (quit) {
         SDL_Event ev;
+        if (quit < 0) {
+            SDL_OutOfMemory();
+        }
+        SDL_zero(ev);
         ev.type = SDL_QUIT;
         SDL_PushEvent(&ev);
         return;
     }
-
-    /* Use the focus state delivered by libnx's existing applet message pump.
-       Applications which suspend on HOME should select the libnx
-       SuspendHomeSleepNotify policy to receive the transition before suspend. */
-    if (switch_window != NULL) {
-        SDL_Window *focus = appletGetFocusState() == AppletFocusState_InFocus
-            ? switch_window : NULL;
-        SDL_SetKeyboardFocus(focus);
-        SDL_SetMouseFocus(focus);
+    SDL_LockMutex(applet_mutex);
+    event = applet_first;
+    applet_first = applet_last = NULL;
+    SDL_UnlockMutex(applet_mutex);
+    while (event) {
+        next = event->next;
+        if (event->type == AppletHookType_OnFocusState && switch_window) {
+            SDL_Window *focus = event->value == AppletFocusState_InFocus
+                ? switch_window : NULL;
+            SDL_SetKeyboardFocus(focus);
+            SDL_SetMouseFocus(focus);
+        } else if (event->type == AppletHookType_OnOperationMode) {
+            om = (AppletOperationMode)event->value;
+        }
+        SDL_free(event);
+        event = next;
     }
 
     // we don't want other inputs overlapping with software keyboard
@@ -376,7 +488,6 @@ SWITCH_PumpEvents(_THIS)
     // note that SDL_WINDOW_RESIZABLE is only possible in windowed mode,
     // so we don't care about current fullscreen/windowed status
     if(switch_window != NULL && switch_window->flags & SDL_WINDOW_RESIZABLE) {
-        om = appletGetOperationMode();
         if(om != operationMode) {
             operationMode = om;
             if(operationMode == AppletOperationMode_Handheld) {
