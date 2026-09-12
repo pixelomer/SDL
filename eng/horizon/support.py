@@ -103,8 +103,16 @@ def libnx(root, spec, mirrors, jobs, override=None):
         return sdk
     source = git_source(spec, Path(root) / 'artifacts/sources/libnx', mirrors)
     run(['make', '-C', source, '-j' + str(jobs)])
-    # libnx keeps its installable SDK layout inside nx/.
-    return source / 'nx'
+    # Match upstream make install, including the BSD socket headers.
+    import shutil
+    sdk = Path(root).resolve() / 'artifacts/libnx-sdk'
+    sdk.mkdir(parents=True, exist_ok=True)
+    for folder in ('include', 'lib'):
+        shutil.copytree(source / 'nx' / folder, sdk / folder, dirs_exist_ok=True)
+    shutil.copytree(source / 'nx/external/bsd/include', sdk / 'include', dirs_exist_ok=True)
+    for name in ('switch.specs', 'switch.ld', 'switch_rules', 'default_icon.jpg'):
+        shutil.copy2(source / 'nx' / name, sdk / name)
+    return sdk
 
 
 def switch_toolchain(output, sdk):
