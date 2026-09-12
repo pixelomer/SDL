@@ -1,0 +1,6 @@
+{
+  "libnx": {
+    "url": "https://github.com/pixelomer/libnx.git",
+    "revision": "bd1d4c263741388a6a015c4ba216132578cfd36d"
+  }
+}

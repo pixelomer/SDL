@@ -1,3 +1,5 @@
+Horizon build instructions: [README.horizon.md](README.horizon.md)
+
 
 # Simple DirectMedia Layer (SDL) Version 2.0
 

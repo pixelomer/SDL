@@ -186,3 +186,7 @@ debian/.debhelper/
 debian/files
 debian/libsdl*/
 debian/tmp/
+
+# Horizon source builds
+/artifacts/
+**/__pycache__/
