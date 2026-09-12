@@ -44,17 +44,28 @@ SDL_GetBasePath(void)
 char *
 SDL_GetPrefPath(const char *org, const char *app)
 {
-    char *ret = NULL;
+    /* Altered for the managed homebrew host. Keep the upstream current-directory
+       policy; applications must select their private working directory first.
+       An absolute path on the default SD mount also works in CLR path APIs,
+       which otherwise interpret the native "sdmc:" prefix as a relative path. */
     char buf[PATH_MAX + 1];
+    const char *path;
+    char *ret;
     size_t len;
-
-    if (getcwd(buf, sizeof(buf) - 1)) {
-        len = strlen(buf);
-        buf[len] =  '/';
-        buf[len + 1] = '\0';
-        ret = SDL_strdup(buf);
+    if (!getcwd(buf, sizeof(buf))) {
+        SDL_SetError("Could not obtain the Switch working directory");
+        return NULL;
     }
-
+    path = SDL_strncmp(buf, "sdmc:/", 6) == 0 ? buf + 5 : buf;
+    len = SDL_strlen(path);
+    ret = SDL_malloc(len + 2);
+    if (!ret) {
+        SDL_OutOfMemory();
+        return NULL;
+    }
+    SDL_memcpy(ret, path, len);
+    if (len == 0 || path[len - 1] != '/') ret[len++] = '/';
+    ret[len] = '\0';
     return ret;
 }
 

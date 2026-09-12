@@ -11,12 +11,12 @@ source=Path(__file__).resolve().parents[1]; dkp=Path(os.environ.get('DEVKITPRO',
 out.mkdir(parents=True)
 toolchain=out/'Switch.cmake'; toolchain.write_text('include("'+str(dkp/'cmake/Switch.cmake')+'")\nset(NX_ROOT "'+str(sdk)+'")\nlist(PREPEND CMAKE_FIND_ROOT_PATH "'+str(sdk)+'")\n')
 commands=[['cmake','-S',str(source),'-B',str(out),'-G','Ninja','-DCMAKE_TOOLCHAIN_FILE='+str(toolchain),'-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
-    '-DCMAKE_BUILD_TYPE=RelWithDebInfo','-DSDL_SHARED=OFF','-DSDL_STATIC=ON','-DSDL_TEST=OFF','-DSDL_TESTS=OFF','-DSDL_POWER=OFF','-DSDL_FILESYSTEM=OFF','-DSDL_CPUINFO=ON','-DSDL_PTHREADS=ON'],
+    '-DCMAKE_BUILD_TYPE=RelWithDebInfo','-DSDL_SHARED=OFF','-DSDL_STATIC=ON','-DSDL_TEST=OFF','-DSDL_TESTS=OFF','-DSDL_POWER=OFF','-DSDL_FILESYSTEM=ON','-DSDL_CPUINFO=ON','-DSDL_PTHREADS=ON'],
     ['cmake','--build',str(out),'--parallel','8']]
 for command in commands: subprocess.run(command,check=True)
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 manifest={'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=source,text=True).strip(),'commands':commands,
     'libnx_archive_sha256':sha(sdk/'lib/libnx.a'),'archive_sha256':sha(out/'libSDL2.a'),
-    'source_sha256':{str(p.relative_to(source)):sha(p) for p in [Path(__file__),source/'src/video/switch/SDL_switchvideo.c']}}
+    'source_sha256':{str(p.relative_to(source)):sha(p) for p in [Path(__file__),source/'src/video/switch/SDL_switchvideo.c',source/'src/SDL.c',source/'src/filesystem/switch/SDL_sysfilesystem.c']}}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 (out/'source-diff.patch').write_bytes(subprocess.check_output(['git','diff','--binary'],cwd=source))
